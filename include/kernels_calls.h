@@ -21,6 +21,9 @@ double* call_DgemmSharedMemory(const double* h_A, const double* h_b, int N);
 // Matrix multiplication kernel with shared memory
 float* call_SgemmSharedMemory(const float* h_A, const float* h_b, int N);
 
+// cutlass matrix multiplication kernel T precision
+float* call_cutlassSgemm(const float* h_A, const float* h_B, int N);
+
 // cublas Batched matrix multiplication kernel
 template <typename T>
 T* call_cublasGemmBatched(const T* h_A, const T* h_B, int N, int BATCH_SIZE);

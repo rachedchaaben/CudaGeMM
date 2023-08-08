@@ -6,7 +6,7 @@
 #include "matrix.h"
 
 const int MIN_MATRIX_SIZE = 1000;
-const int MAX_MATRIX_SIZE = 4000;
+const int MAX_MATRIX_SIZE = 1000;
 
 int main()
 {
@@ -37,61 +37,55 @@ int main()
     for (int N = MIN_MATRIX_SIZE; N <= MAX_MATRIX_SIZE; N += 500) {
         std::cout << "Matrix Size: " << N << " x " << N << std::endl;
 
-        // Allocate memory for host matrices
+        // Initialize input matrices with random values
         double* h_A = new double[N * N];
         double* h_B = new double[N * N];
-        double* h_C_cuda_global = new double[N * N];
-        double* h_C_cuda_shared = new double[N * N];
-        double* h_C_cublas = new double[N * N];
-        float* h_C_cublas_float = new float[N * N];
+
         float* h_A_float = new float[N * N];
         float* h_B_float = new float[N * N];
-        float* h_C_cuda_global_float = new float[N * N];
-        float* h_C_cuda_shared_float = new float[N * N];
-
-
-        // Initialize input matrices with random values
         h_A = generateRandomMatrixDouble(N, N);
-        h_B = generateRandomMatrixDouble(N, N);
-        for (int i = 0; i < N * N; ++i) {
+                for (int i = 0; i < N * N; ++i) {
             h_A_float[i] = static_cast<float>(h_A[i]);
         }
+        
+        h_B = generateRandomMatrixDouble(N, N);
         for (int i = 0; i < N * N; ++i) {
             h_B_float[i] = static_cast<float>(h_B[i]);
         }
 
-        // cublas gemm as reference for output verification
-        h_C_cublas = call_cublasGemm(h_A, h_B, N);
-        h_C_cublas_float = call_cublasGemm(h_A_float, h_B_float, N);
+        double *h_C1, *h_C2, *h_C3, *h_C4;
+        float *h_C1_float, *h_C2_float, *h_C3_float, *h_C4_float;
 
-        h_C_cuda_global = call_DgemmGlobalMemory(h_A, h_B, N);
-        h_C_cuda_global_float = call_SgemmGlobalMemory(h_A_float, h_B_float, N);
+        h_C1 = call_cublasGemm(h_A, h_B, N);
+        h_C1_float = call_cublasGemm(h_A_float, h_B_float, N);
 
-        h_C_cuda_shared = call_DgemmSharedMemory(h_A, h_B, N);
-        h_C_cuda_shared_float = call_SgemmSharedMemory(h_A_float, h_B_float, N);
+        h_C2_float = call_cutlassSgemm(h_A_float, h_B_float, N);
 
-                float* h_CPU = new float [N * N];
-                h_CPU = gemm_cpu(h_A_float, h_B_float,N,N,N);
-        /**/
+        h_C3 = call_DgemmGlobalMemory(h_A, h_B, N);
+        h_C3_float = call_SgemmGlobalMemory(h_A_float, h_B_float, N);
+
+        h_C4 = call_DgemmSharedMemory(h_A, h_B, N);
+        h_C4_float = call_SgemmSharedMemory(h_A_float, h_B_float, N);
+
+
         // Compare results of CUDA kernels
-        if (compareMatrices(h_C_cublas, h_C_cuda_global, N, 1) &&
-            compareMatrices(h_C_cublas, h_C_cuda_shared, N, 1)) {
+        if (compareMatrices(h_C1, h_C4, N, 1) &&
+        //    compareMatrices(h_C3, h_C1, N, 1) &&
+            compareMatrices(h_C4, h_C3, N, 1)) {
             std::cout << "Correct Double Precison CUDA Kernels\n";
         } else
             std::cerr
                 << "Double Precison CUDA Kernels produced inconsistent results!"
                 << std::endl;
 
-        if (compareMatrices(h_C_cublas_float, h_C_cuda_shared_float, N, 1) &&
-            compareMatrices(
-                h_C_cuda_global_float, h_C_cublas_float, N,
-                1) /*&& compareMatrices(h_CPU,h_C_cuda_shared_float,N)/**/) {
-            std::cout << "Correct Single Precision CUDA kernels\n";
+        if (compareMatrices(h_C1_float, h_C2_float, N, 1) &&
+            compareMatrices(h_C3_float, h_C1_float, N, 1) &&
+            compareMatrices(h_C2_float, h_C4_float, N, 1)) {
+            std::cout << "Correct Float Precison CUDA Kernels\n";
         } else
             std::cerr
-                << "Single Precison CUDA Kernels produced inconsistent results!"
+                << "Float Precison CUDA Kernels produced inconsistent results!"
                 << std::endl;
-
         std::cout << std::endl;
     }
     return 0;

@@ -192,6 +192,58 @@ float* call_SgemmSharedMemory(const float* h_A, const float* h_B, int N)
     return h_C;
 }
 
+// cutlass matrix multiplication kernel T precision
+float* call_cutlassSgemm(const float* h_A, const float* h_B, int N)
+{
+    float* h_C = new float[N * N];
+
+    // Allocate memory on GPU
+    float* d_A;
+    float* d_B;
+    float* d_C;
+
+    cudaMalloc(&d_A, N * N * sizeof(float));
+    cudaMalloc(&d_B, N * N * sizeof(float));
+    cudaMalloc(&d_C, N * N * sizeof(float));
+    // Copy data from host to device
+    cudaMemcpy(d_A, h_A, N * N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, N * N * sizeof(float), cudaMemcpyHostToDevice);
+
+    using ColumnMajor = cutlass::layout::ColumnMajor;
+
+    using CutlassGemm =
+        cutlass::gemm::device::Gemm<float,         // Data-type of A matrix
+                                    ColumnMajor,   // Layout of A matrix
+                                    float,         // Data-type of B matrix
+                                    ColumnMajor,   // Layout of B matrix
+                                    float,         // Data-type of C matrix
+                                    ColumnMajor>;  // Layout of C matrix
+
+    // Define a CUTLASS GEMM type
+    CutlassGemm gemm_operator;
+
+    CutlassGemm::Arguments args(
+        {N ,N ,N},  // Gemm Problem dimensions
+        {d_B, N}, 
+        {d_A, N},   // Tensor-ref for source matrix A
+        {d_C, N},   // Tensor-ref for source matrix C
+        {d_C, N},   // Tensor-ref for destination matrix D (may be different
+                    // memory than source C matrix)
+        {1.0f, 0.0f});  // Scalars used in the Epilogue
+    
+    cutlass::Status status = gemm_operator(args);
+
+    // Copy results back from device to host
+    cudaMemcpy(h_C, d_C, N * N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Free memory on GPU
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return h_C;
+}
+
 
 // cublas Batched matrix multiplication kernel T precision
 template <typename T>
