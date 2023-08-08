@@ -174,7 +174,7 @@ float* call_SgemmSharedMemory(const float* h_A, const float* h_B, int N)
 
     // Calculate the grid and block dimensions for CUDA kernels
 
-    dim3 block(51);
+    dim3 block(256);
     dim3 grid(CEIL(N,128), CEIL(N,128));
 
 

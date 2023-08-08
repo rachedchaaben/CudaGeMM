@@ -6,7 +6,7 @@
 #include "matrix.h"
 
 const int MIN_MATRIX_SIZE = 1000;
-const int MAX_MATRIX_SIZE = 6000;
+const int MAX_MATRIX_SIZE = 4000;
 
 int main()
 {
