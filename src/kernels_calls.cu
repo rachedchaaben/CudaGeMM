@@ -3,6 +3,7 @@
 #include <device_launch_parameters.h>
 #include <stdio.h>
 #include <iostream>
+#include <cmath>
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm.h"
 #include "cutlass/gemm/device/gemm_array.h"
@@ -10,19 +11,14 @@
 #include "cutlass/layout/matrix.h"
 #include "kernels_calls.h"
 #include "wrapper.h"
+#define CEIL(M, N) (((M) + (N)-1) / (N)) 
 
 using namespace std;
-
 
 // cublas matrix multiplication kernel T precision
 template <typename T>
 T* call_cublasGemm(const T* h_A, const T* h_B, int N)
 {
-    // Initialize CUDA events for measuring time
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
     // handle creation for cublas gemm
     cublasHandle_t handle;
     cublasCreate(&handle);
@@ -43,17 +39,8 @@ T* call_cublasGemm(const T* h_A, const T* h_B, int N)
 
     const T alpha = 1.0;
     const T beta = 0.0;
-    cudaEventRecord(start);
     cublasGemm_w(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, N, N, &alpha, d_B, N, d_A,
                  N, &beta, d_C, N);
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    float elapsedTimecublasDgemm;
-    cudaEventElapsedTime(&elapsedTimecublasDgemm, start, stop);
-
-    std::cout << typeid(T).name() << " cublas GeMM GFLOPs/s "
-              << (2 * N * (N / 1000) * (N / 1000)) / elapsedTimecublasDgemm
-              << '\n';
     cudaMemcpy(h_C, d_C, N * N * sizeof(T), cudaMemcpyDeviceToHost);
 
     cublasDestroy(handle);
@@ -67,47 +54,31 @@ T* call_cublasGemm(const T* h_A, const T* h_B, int N)
 template double* call_cublasGemm(const double* h_A, const double* h_B, int N);
 template float* call_cublasGemm(const float* h_A, const float* h_B, int N);
 
-template <typename T>
-T* call_GemmGlobalMemory(const T* h_A, const T* h_B, int N)
+double* call_DgemmGlobalMemory(const double* h_A, const double* h_B, int N)
 {
-    // Initialize CUDA events for measuring time
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    T* h_C = new T[N * N];
+    double* h_C = new double[N * N];
 
     // Allocate memory on GPU
-    T* d_A;
-    T* d_B;
-    T* d_C;
+    double* d_A;
+    double* d_B;
+    double* d_C;
 
-    cudaMalloc(&d_A, N * N * sizeof(T));
-    cudaMalloc(&d_B, N * N * sizeof(T));
-    cudaMalloc(&d_C, N * N * sizeof(T));
+    cudaMalloc(&d_A, N * N * sizeof(double));
+    cudaMalloc(&d_B, N * N * sizeof(double));
+    cudaMalloc(&d_C, N * N * sizeof(double));
     // Copy data from host to device
-    cudaMemcpy(d_A, h_A, N * N * sizeof(T), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, h_B, N * N * sizeof(T), cudaMemcpyHostToDevice);
-
+    cudaMemcpy(d_A, h_A, N * N * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, N * N * sizeof(double), cudaMemcpyHostToDevice);
 
     // Calculate the grid and block dimensions for CUDA kernels
-    dim3 block(32, 32);
-    dim3 grid((N + block.x - 1) / block.x, (N + block.y - 1) / block.y);
+    dim3 block(32 * 32);
+    dim3 grid(CEIL(N,32), CEIL(N,32));
 
-    // Call the global memory T precision kernel
-    cudaEventRecord(start);
-    globalMemoryGemm<<<grid, block>>>(d_A, d_B, d_C, N);
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    float elapsedTimeGlobalDouble;
-    cudaEventElapsedTime(&elapsedTimeGlobalDouble, start, stop);
-
-    std::cout << typeid(T).name() << " GeMM GFLOPs/s "
-              << (2 * N * (N / 1000) * (N / 1000)) / elapsedTimeGlobalDouble
-              << '\n';
+    // Call the global memory double precision kernel
+    globalMemoryDgemm<<<grid, block>>>(d_A, d_B, d_C, N);
 
     // Copy results back from device to host
-    cudaMemcpy(h_C, d_C, N * N * sizeof(T), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_C, d_C, N * N * sizeof(double), cudaMemcpyDeviceToHost);
 
     // Free memory on GPU
     cudaFree(d_A);
@@ -116,52 +87,32 @@ T* call_GemmGlobalMemory(const T* h_A, const T* h_B, int N)
 
     return h_C;
 }
-template double* call_GemmGlobalMemory(const double* h_A, const double* h_B,
-                                       int N);
-template float* call_GemmGlobalMemory(const float* h_A, const float* h_B,
-                                      int N);
 
-template <typename T>
-T* call_GemmSharedMemory(const T* h_A, const T* h_B, int N)
+float* call_SgemmGlobalMemory(const float* h_A, const float* h_B, int N)
 {
-    // Initialize CUDA events for measuring time
-    cudaEvent_t start, stop;
-    cudaEventCreate(&start);
-    cudaEventCreate(&stop);
-
-    T* h_C = new T[N * N];
+    float* h_C = new float[N * N];
 
     // Allocate memory on GPU
-    T* d_A;
-    T* d_B;
-    T* d_C;
+    float* d_A;
+    float* d_B;
+    float* d_C;
 
-    cudaMalloc(&d_A, N * N * sizeof(T));
-    cudaMalloc(&d_B, N * N * sizeof(T));
-    cudaMalloc(&d_C, N * N * sizeof(T));
+    cudaMalloc(&d_A, N * N * sizeof(float));
+    cudaMalloc(&d_B, N * N * sizeof(float));
+    cudaMalloc(&d_C, N * N * sizeof(float));
     // Copy data from host to device
-    cudaMemcpy(d_A, h_A, N * N * sizeof(T), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_B, h_B, N * N * sizeof(T), cudaMemcpyHostToDevice);
-
+    cudaMemcpy(d_A, h_A, N * N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, N * N * sizeof(float), cudaMemcpyHostToDevice);
 
     // Calculate the grid and block dimensions for CUDA kernels
-    dim3 block(32, 32);
-    dim3 grid((N + block.x - 1) / block.x, (N + block.y - 1) / block.y);
+    dim3 block(32 * 32);
+    dim3 grid(CEIL(N,32), CEIL(N,32));
 
-    // Call the global memory T precision kernel
-    cudaEventRecord(start);
-    SharedMemoryGemm<<<grid, block>>>(d_A, d_B, d_C, N);
-    cudaEventRecord(stop);
-    cudaEventSynchronize(stop);
-    float elapsedTimeGlobalDouble;
-    cudaEventElapsedTime(&elapsedTimeGlobalDouble, start, stop);
-
-    std::cout << typeid(T).name() << " Shared memory GeMM GFLOPs/s "
-              << (2 * N * (N / 1000) * (N / 1000)) / elapsedTimeGlobalDouble
-              << '\n';
+    // Call the global memory float precision kernel
+    globalMemorySgemm<<<grid, block>>>(d_A, d_B, d_C, N);
 
     // Copy results back from device to host
-    cudaMemcpy(h_C, d_C, N * N * sizeof(T), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_C, d_C, N * N * sizeof(float), cudaMemcpyDeviceToHost);
 
     // Free memory on GPU
     cudaFree(d_A);
@@ -170,10 +121,76 @@ T* call_GemmSharedMemory(const T* h_A, const T* h_B, int N)
 
     return h_C;
 }
-template double* call_GemmSharedMemory(const double* h_A, const double* h_B,
-                                       int N);
-template float* call_GemmSharedMemory(const float* h_A, const float* h_B,
-                                      int N);
+
+double* call_DgemmSharedMemory(const double* h_A, const double* h_B, int N)
+{
+    double* h_C = new double[N * N];
+
+    // Allocate memory on GPU
+    double* d_A;
+    double* d_B;
+    double* d_C;
+
+    cudaMalloc(&d_A, N * N * sizeof(double));
+    cudaMalloc(&d_B, N * N * sizeof(double));
+    cudaMalloc(&d_C, N * N * sizeof(double));
+    // Copy data from host to device
+    cudaMemcpy(d_A, h_A, N * N * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, N * N * sizeof(double), cudaMemcpyHostToDevice);
+
+    // Calculate the grid and block dimensions for CUDA kernels
+    dim3 block(32 * 32);
+    dim3 grid(CEIL(N,32), CEIL(N,32));
+
+    // Call the global memory double precision kernel
+    SharedMemoryDgemm<<<grid, block>>>(d_A, d_B, d_C, N);
+
+    // Copy results back from device to host
+    cudaMemcpy(h_C, d_C, N * N * sizeof(double), cudaMemcpyDeviceToHost);
+
+    // Free memory on GPU
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return h_C;
+}
+
+float* call_SgemmSharedMemory(const float* h_A, const float* h_B, int N)
+{
+    float* h_C = new float[N * N];
+
+    // Allocate memory on GPU
+    float* d_A;
+    float* d_B;
+    float* d_C;
+
+    cudaMalloc(&d_A, N * N * sizeof(float));
+    cudaMalloc(&d_B, N * N * sizeof(float));
+    cudaMalloc(&d_C, N * N * sizeof(float));
+    // Copy data from host to device
+    cudaMemcpy(d_A, h_A, N * N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, N * N * sizeof(float), cudaMemcpyHostToDevice);
+
+    // Calculate the grid and block dimensions for CUDA kernels
+
+    dim3 block(51);
+    dim3 grid(CEIL(N,128), CEIL(N,128));
+
+
+    // Call the global memory float precision kernel
+    SharedMemorySgemm<<<grid, block>>>(d_A, d_B, d_C, N);
+
+    // Copy results back from device to host
+    cudaMemcpy(h_C, d_C, N * N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // Free memory on GPU
+    cudaFree(d_A);
+    cudaFree(d_B);
+    cudaFree(d_C);
+
+    return h_C;
+}
 
 
 // cublas Batched matrix multiplication kernel T precision

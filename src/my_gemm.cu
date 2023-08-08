@@ -6,7 +6,11 @@
 #include "my_gemm.h"
 using namespace std;
 
+#define CEIL(M, N) (((M) + (N)-1) / (N)) 
+
 const int TILE_SIZE = 32;
+const int TH_tile= 8; 
+const int SM_tile = 128;
 
 
 // reference CPU GeMM to check for correctness
@@ -26,62 +30,141 @@ float* gemm_cpu(float* A, float* B, int m, int n, int k)
 }
 
 // Matrix multiplication kernel using global memory
-template <typename T>
-__global__ void globalMemoryGemm(const T* A, const T* B, T* C, int N)
+__global__ void globalMemorySgemm(const float* A, const float* B, float* C, int N)
 {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    const int row = blockIdx.x * 32 + (threadIdx.x / 32);
+    const int col = blockIdx.y * 32 + (threadIdx.x % 32);
 
     if (row < N && col < N) {
-        T sum = 0.0;
+        float sum = 0.0f;
         for (int k = 0; k < N; ++k) {
             sum += A[row * N + k] * B[k * N + col];
         }
         C[row * N + col] = sum;
     }
 }
-template __global__ void globalMemoryGemm(const double* A, const double* B,
-                                          double* C, int N);
-template __global__ void globalMemoryGemm(const float* A, const float* B,
-                                          float* C, int N);
 
-
-// Matrix multiplication kernel using shared memory
-template <typename T>
-__global__ void SharedMemoryGemm(const T* A, const T* B, T* C, int N)
+// Matrix multiplication kernel using global memory
+__global__ void globalMemoryDgemm(const double* A, const double* B, double* C, int N)
 {
-    int row = threadIdx.y;
-    int col = threadIdx.x;
+    const int row = blockIdx.x * 32 + (threadIdx.x / 32);
+    const int col = blockIdx.y * 32 + (threadIdx.x % 32);
 
-    int A_row = blockIdx.y * blockDim.y + row;
-    int B_col = blockIdx.x * blockDim.x + col;
+    if (row < N && col < N) {
+        double sum = 0.0;
+        for (int k = 0; k < N; ++k) {
+            sum += A[row * N + k] * B[k * N + col];
+        }
+        C[row * N + col] = sum;
+    }
+}
+
+
+// Single precision shared memory GeMM 
+__global__ void SharedMemorySgemm(const float* A, const float* B, float* C, int N)
+{
+    int bx = blockIdx.x;
+    int by = blockIdx.y;
+
+    int block_row_thread = SM_tile / TH_tile;
+    int block_col_thread = SM_tile / TH_tile;
+    int thread_num = block_row_thread * block_col_thread; 
+
+    int tx = (threadIdx.x % block_row_thread) * TH_tile;
+    int ty = (threadIdx.x / block_row_thread) * TH_tile;
+
+    __shared__ float As[SM_tile * TH_tile];
+    __shared__ float Bs[TH_tile * SM_tile];
+
+    A = &A[by * SM_tile * N];
+    B = &B[bx * SM_tile];
+    C = &C[by * SM_tile * N + bx * SM_tile];
+
+    int a_tile_row = threadIdx.x / TH_tile;
+    int a_tile_col = threadIdx.x % TH_tile;
+    int a_tile_stride = thread_num / TH_tile;
+
+    int b_tile_row = threadIdx.x / SM_tile;
+    int b_tile_col = threadIdx.x % SM_tile;
+    int b_tile_stride = thread_num / SM_tile;
+
+    float tmp[TH_tile][TH_tile] = {0.}; 
+    #pragma unroll
+    for (int k = 0; k < N; k += TH_tile) {
+        #pragma unroll  
+        for (int i = 0; i < SM_tile; i += a_tile_stride) {
+            if(((by * SM_tile +(a_tile_row + i)) < N) && (a_tile_col < N))
+                As[(a_tile_row + i) * TH_tile + a_tile_col] = A[(a_tile_row + i) * N + a_tile_col];
+            else 
+                As[(a_tile_row + i) * TH_tile + a_tile_col] = 0;
+        }
+        #pragma unroll
+        for (int i = 0; i < TH_tile; i += b_tile_stride) {
+            if (((b_tile_row + i) <N) && ((bx * SM_tile + b_tile_col )< N))
+                Bs[(b_tile_row + i) * SM_tile + b_tile_col] = B[(b_tile_row + i) * N + b_tile_col];
+            else 
+                Bs[(b_tile_row + i) * SM_tile + b_tile_col] =  0;
+
+        }
+        __syncthreads();
+        A += TH_tile;
+        B += TH_tile * N;
+        #pragma unroll
+        for (int i = 0; i < TH_tile; i++) {
+            #pragma unroll  
+            for (int j = 0; j < TH_tile; j++) {
+                for (int l = 0; l < TH_tile; l++)
+                    tmp[j][l] += As[(ty + j) * TH_tile + i] * Bs[tx + l + i * SM_tile];
+            }
+        }
+        __syncthreads();
+    }
+    #pragma unroll
+    for (int j = 0; j < TH_tile; j++) {
+        for (int l = 0; l < TH_tile; l++)
+            if (((by * SM_tile +ty +j)<N) && ((bx * SM_tile +tx+ l)<N))
+            C[(ty + j) * N + tx + l] = tmp[j][l];
+    }
+}
+
+
+
+// Double precision shared memory GeMM 
+__global__ void SharedMemoryDgemm(const double* A, const double* B, double* C, int N)
+{
+    int row = (threadIdx.x / TILE_SIZE);
+    int col = (threadIdx.x % TILE_SIZE);
+
+    int A_row = blockIdx.x * TILE_SIZE + row;
+    int B_col = blockIdx.y * TILE_SIZE + col;
     int C_sub_offset = A_row * N + B_col;
 
-    T sum = 0.0;
+    double sum = 0.0;
     int numTiles = (N + TILE_SIZE - 1) / TILE_SIZE;
+    #pragma unroll
     for (int t = 0; t < numTiles; ++t) {
-        __shared__ T shared_A[TILE_SIZE][TILE_SIZE];
-        __shared__ T shared_B[TILE_SIZE][TILE_SIZE];
+        __shared__ double shared_A[TILE_SIZE * TILE_SIZE];
+        __shared__ double shared_B[TILE_SIZE * TILE_SIZE];
 
         int A_col = t * TILE_SIZE + col;
         int B_row = t * TILE_SIZE + row;
 
         if (A_row < N && A_col < N) {
-            shared_A[row][col] = A[A_row * N + A_col];
+            shared_A[row * TILE_SIZE +col] = A[A_row * N + A_col];
         } else {
-            shared_A[row][col] = 0.0;
+            shared_A[row * TILE_SIZE +col] = 0.0;
         }
 
         if (B_row < N && B_col < N) {
-            shared_B[row][col] = B[B_row * N + B_col];
+            shared_B[row * TILE_SIZE +col] = B[B_row * N + B_col];
         } else {
-            shared_B[row][col] = 0.0;
+            shared_B[row * TILE_SIZE +col] = 0.0;
         }
 
         __syncthreads();
-
+        #pragma unroll
         for (int k = 0; k < TILE_SIZE; ++k) {
-            sum += shared_A[row][k] * shared_B[k][col];
+            sum += shared_A[row * TILE_SIZE +k] * shared_B[k * TILE_SIZE +col];
         }
 
         __syncthreads();
@@ -91,10 +174,6 @@ __global__ void SharedMemoryGemm(const T* A, const T* B, T* C, int N)
         C[C_sub_offset] = sum;
     }
 }
-template __global__ void SharedMemoryGemm(const double* A, const double* B,
-                                          double* C, int N);
-template __global__ void SharedMemoryGemm(const float* A, const float* B,
-                                          float* C, int N);
 
 // Kernel to perform batched Gemm
 template <typename T>
@@ -168,54 +247,6 @@ __global__ void SharedMemoryBatchedGemm(const T* A, const T* B, T* C, int N,
         C[A_row * N * batch_size + B_col] = sum;
     }
 
-
-    /**/
-
-
-    /* int col = threadIdx.y;
-     int row = threadIdx.x;
-
-     int B_col = blockIdx.y * blockDim.y + col;
-     int A_row = blockIdx.x * blockDim.x + row;
-
-     int batch_col = B_col%N;
-     int batch_idx = B_col/N;
-
-     int C_sub_offset = A_row * N *batch_size + B_col;
-
-     T sum = 0.0;
-     int numTiles = (N + TILE_SIZE - 1) / TILE_SIZE;
-     for (int t = 0; t < numTiles; ++t) {
-         __shared__ T shared_A[TILE_SIZE][TILE_SIZE];
-         __shared__ T shared_B[TILE_SIZE][TILE_SIZE];
-
-         int A_col = t * TILE_SIZE + col;
-         int B_row = t * TILE_SIZE + row;
-
-         if (A_row < N && A_col < N && batch_idx <batch_size) {
-             shared_A[row][col] = A[A_row * N *batch_size+ A_col +batch_idx*N];
-         } else {
-             shared_A[row][col] = 0.0;
-         }
-
-         if (B_row < N && batch_col < N && batch_idx <batch_size) {
-             shared_B[row][col] = B[B_row * N *batch_size + B_col];
-         } else {
-             shared_B[row][col] = 0.0;
-         }
-
-         __syncthreads();
-
-         for (int k = 0; k < TILE_SIZE; ++k) {
-             sum += shared_A[row][k] * shared_B[k][col];
-         }
-
-         __syncthreads();
-     }
-
-     if (A_row < N && batch_col < N && batch_idx < batch_size) {
-         C[C_sub_offset] = sum;
-     }/**/
 }
 template __global__ void SharedMemoryBatchedGemm(const double* A,
                                                  const double* B, double* C,

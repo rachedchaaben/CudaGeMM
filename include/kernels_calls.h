@@ -10,12 +10,16 @@ template <typename T>
 T* call_cublasGemm(const T* h_A, const T* h_B, int N);
 
 // Matrix multiplication kernel
-template <typename T>
-T* call_GemmGlobalMemory(const T* h_A, const T* h_b, int N);
+double* call_DgemmGlobalMemory(const double* h_A, const double* h_b, int N);
+
+// Matrix multiplication kernel
+float* call_SgemmGlobalMemory(const float* h_A, const float* h_b, int N);
 
 // Matrix multiplication kernel with shared memory
-template <typename T>
-T* call_GemmSharedMemory(const T* h_A, const T* h_b, int N);
+double* call_DgemmSharedMemory(const double* h_A, const double* h_b, int N);
+
+// Matrix multiplication kernel with shared memory
+float* call_SgemmSharedMemory(const float* h_A, const float* h_b, int N);
 
 // cublas Batched matrix multiplication kernel
 template <typename T>

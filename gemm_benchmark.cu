@@ -34,7 +34,7 @@ int main()
     };
 
     // Loop through different matrix sizes and compare the performance
-    for (int N = MIN_MATRIX_SIZE; N <= MAX_MATRIX_SIZE; N += 1000) {
+    for (int N = MIN_MATRIX_SIZE; N <= MAX_MATRIX_SIZE; N += 500) {
         std::cout << "Matrix Size: " << N << " x " << N << std::endl;
 
         // Allocate memory for host matrices
@@ -64,12 +64,12 @@ int main()
         h_C_cublas = call_cublasGemm(h_A, h_B, N);
         h_C_cublas_float = call_cublasGemm(h_A_float, h_B_float, N);
 
-        h_C_cuda_global = call_GemmGlobalMemory(h_A, h_B, N);
-        h_C_cuda_global_float = call_GemmGlobalMemory(h_A_float, h_B_float, N);
+        h_C_cuda_global = call_DgemmGlobalMemory(h_A, h_B, N);
+        h_C_cuda_global_float = call_SgemmGlobalMemory(h_A_float, h_B_float, N);
 
-        h_C_cuda_shared = call_GemmSharedMemory(h_A, h_B, N);
-        h_C_cuda_shared_float = call_GemmSharedMemory(h_A_float, h_B_float, N);
-        /*
+        h_C_cuda_shared = call_DgemmSharedMemory(h_A, h_B, N);
+        h_C_cuda_shared_float = call_SgemmSharedMemory(h_A_float, h_B_float, N);
+
                 float* h_CPU = new float [N * N];
                 h_CPU = gemm_cpu(h_A_float, h_B_float,N,N,N);
         /**/
