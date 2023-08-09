@@ -47,7 +47,7 @@ CudaGeMM
 │   │   - Header file containing template functions for calling each kernel.
 │   ├── matrix.h
 │   │   - Header file for matrix operations like generating random matrices and comparing matrices.
-│   ├── my_gemm.h
+│   ├── kernels.h
 │   │   - Header file containing gemm implementations.
 │   └── wrapper.h
 │       - Header file for wrapping the cublasSgemm and cublasDgemm functions as a template.
@@ -56,7 +56,7 @@ CudaGeMM
     │   - Source file implementing the template functions for calling each kernel.
     ├── matrix.cpp
     │   - Source file containing the implementation for matrix operations.
-    ├── my_gemm.cu
+    ├── kernels.cu
     │   - Source file containing the implementation of gemm kernels.
     └── wrapper.cu
         - Source file implementing the wrapper for cublasSgemm and cublasDgemm as a template.
