@@ -3,13 +3,13 @@
 #include <device_launch_parameters.h>
 #include <stdio.h>
 #include <iostream>
-#include "my_gemm.h"
+#include "kernels.h"
 using namespace std;
 
-#define CEIL(M, N) (((M) + (N)-1) / (N)) 
+#define CEIL(M, N) (((M) + (N)-1) / (N))
 
 const int TILE_SIZE = 32;
-const int TH_tile= 8; 
+const int TH_tile = 8;
 const int SM_tile = 128;
 
 
@@ -30,7 +30,8 @@ float* gemm_cpu(float* A, float* B, int m, int n, int k)
 }
 
 // Matrix multiplication kernel using global memory
-__global__ void globalMemorySgemm(const float* A, const float* B, float* C, int N)
+__global__ void globalMemorySgemm(const float* A, const float* B, float* C,
+                                  int N)
 {
     const int row = blockIdx.x * 32 + (threadIdx.x / 32);
     const int col = blockIdx.y * 32 + (threadIdx.x % 32);
@@ -45,7 +46,8 @@ __global__ void globalMemorySgemm(const float* A, const float* B, float* C, int 
 }
 
 // Matrix multiplication kernel using global memory
-__global__ void globalMemoryDgemm(const double* A, const double* B, double* C, int N)
+__global__ void globalMemoryDgemm(const double* A, const double* B, double* C,
+                                  int N)
 {
     const int row = blockIdx.x * 32 + (threadIdx.x / 32);
     const int col = blockIdx.y * 32 + (threadIdx.x % 32);
@@ -60,15 +62,16 @@ __global__ void globalMemoryDgemm(const double* A, const double* B, double* C, i
 }
 
 
-// Single precision shared memory GeMM 
-__global__ void SharedMemorySgemm(const float* A, const float* B, float* C, int N)
+// Single precision shared memory GeMM
+__global__ void SharedMemorySgemm(const float* A, const float* B, float* C,
+                                  int N)
 {
     int bx = blockIdx.x;
     int by = blockIdx.y;
 
     int block_row_thread = SM_tile / TH_tile;
     int block_col_thread = SM_tile / TH_tile;
-    int thread_num = block_row_thread * block_col_thread; 
+    int thread_num = block_row_thread * block_col_thread;
 
     int tx = (threadIdx.x % block_row_thread) * TH_tile;
     int ty = (threadIdx.x / block_row_thread) * TH_tile;
@@ -88,49 +91,51 @@ __global__ void SharedMemorySgemm(const float* A, const float* B, float* C, int 
     int b_tile_col = threadIdx.x % SM_tile;
     int b_tile_stride = thread_num / SM_tile;
 
-    float tmp[TH_tile][TH_tile] = {0.}; 
-    #pragma unroll
+    float tmp[TH_tile][TH_tile] = {0.};
+#pragma unroll
     for (int k = 0; k < N; k += TH_tile) {
-        #pragma unroll  
+#pragma unroll
         for (int i = 0; i < SM_tile; i += a_tile_stride) {
-            if(((by * SM_tile +(a_tile_row + i)) < N) && (a_tile_col < N))
-                As[(a_tile_row + i) * TH_tile + a_tile_col] = A[(a_tile_row + i) * N + a_tile_col];
-            else 
+            if (((by * SM_tile + (a_tile_row + i)) < N) && (a_tile_col < N))
+                As[(a_tile_row + i) * TH_tile + a_tile_col] =
+                    A[(a_tile_row + i) * N + a_tile_col];
+            else
                 As[(a_tile_row + i) * TH_tile + a_tile_col] = 0;
         }
-        #pragma unroll
+#pragma unroll
         for (int i = 0; i < TH_tile; i += b_tile_stride) {
-            if (((b_tile_row + i) <N) && ((bx * SM_tile + b_tile_col )< N))
-                Bs[(b_tile_row + i) * SM_tile + b_tile_col] = B[(b_tile_row + i) * N + b_tile_col];
-            else 
-                Bs[(b_tile_row + i) * SM_tile + b_tile_col] =  0;
-
+            if (((b_tile_row + i) < N) && ((bx * SM_tile + b_tile_col) < N))
+                Bs[(b_tile_row + i) * SM_tile + b_tile_col] =
+                    B[(b_tile_row + i) * N + b_tile_col];
+            else
+                Bs[(b_tile_row + i) * SM_tile + b_tile_col] = 0;
         }
         __syncthreads();
         A += TH_tile;
         B += TH_tile * N;
-        #pragma unroll
+#pragma unroll
         for (int i = 0; i < TH_tile; i++) {
-            #pragma unroll  
+#pragma unroll
             for (int j = 0; j < TH_tile; j++) {
                 for (int l = 0; l < TH_tile; l++)
-                    tmp[j][l] += As[(ty + j) * TH_tile + i] * Bs[tx + l + i * SM_tile];
+                    tmp[j][l] +=
+                        As[(ty + j) * TH_tile + i] * Bs[tx + l + i * SM_tile];
             }
         }
         __syncthreads();
     }
-    #pragma unroll
+#pragma unroll
     for (int j = 0; j < TH_tile; j++) {
         for (int l = 0; l < TH_tile; l++)
-            if (((by * SM_tile +ty +j)<N) && ((bx * SM_tile +tx+ l)<N))
-            C[(ty + j) * N + tx + l] = tmp[j][l];
+            if (((by * SM_tile + ty + j) < N) && ((bx * SM_tile + tx + l) < N))
+                C[(ty + j) * N + tx + l] = tmp[j][l];
     }
 }
 
 
-
-// Double precision shared memory GeMM 
-__global__ void SharedMemoryDgemm(const double* A, const double* B, double* C, int N)
+// Double precision shared memory GeMM
+__global__ void SharedMemoryDgemm(const double* A, const double* B, double* C,
+                                  int N)
 {
     int row = (threadIdx.x / TILE_SIZE);
     int col = (threadIdx.x % TILE_SIZE);
@@ -141,7 +146,7 @@ __global__ void SharedMemoryDgemm(const double* A, const double* B, double* C, i
 
     double sum = 0.0;
     int numTiles = (N + TILE_SIZE - 1) / TILE_SIZE;
-    #pragma unroll
+#pragma unroll
     for (int t = 0; t < numTiles; ++t) {
         __shared__ double shared_A[TILE_SIZE * TILE_SIZE];
         __shared__ double shared_B[TILE_SIZE * TILE_SIZE];
@@ -150,21 +155,22 @@ __global__ void SharedMemoryDgemm(const double* A, const double* B, double* C, i
         int B_row = t * TILE_SIZE + row;
 
         if (A_row < N && A_col < N) {
-            shared_A[row * TILE_SIZE +col] = A[A_row * N + A_col];
+            shared_A[row * TILE_SIZE + col] = A[A_row * N + A_col];
         } else {
-            shared_A[row * TILE_SIZE +col] = 0.0;
+            shared_A[row * TILE_SIZE + col] = 0.0;
         }
 
         if (B_row < N && B_col < N) {
-            shared_B[row * TILE_SIZE +col] = B[B_row * N + B_col];
+            shared_B[row * TILE_SIZE + col] = B[B_row * N + B_col];
         } else {
-            shared_B[row * TILE_SIZE +col] = 0.0;
+            shared_B[row * TILE_SIZE + col] = 0.0;
         }
 
         __syncthreads();
-        #pragma unroll
+#pragma unroll
         for (int k = 0; k < TILE_SIZE; ++k) {
-            sum += shared_A[row * TILE_SIZE +k] * shared_B[k * TILE_SIZE +col];
+            sum +=
+                shared_A[row * TILE_SIZE + k] * shared_B[k * TILE_SIZE + col];
         }
 
         __syncthreads();
@@ -246,7 +252,6 @@ __global__ void SharedMemoryBatchedGemm(const T* A, const T* B, T* C, int N,
     if (A_row < N && B_col < N * batch_size) {
         C[A_row * N * batch_size + B_col] = sum;
     }
-
 }
 template __global__ void SharedMemoryBatchedGemm(const double* A,
                                                  const double* B, double* C,

@@ -8,16 +8,20 @@
 float* gemm_cpu(float* A, float* B, int m, int n, int k);
 
 // Matrix multiplication kernel using global memory
-__global__ void globalMemoryDgemm(const double* A, const double* B, double* C, int N);
+__global__ void globalMemoryDgemm(const double* A, const double* B, double* C,
+                                  int N);
 
 // Matrix multiplication kernel using global memory
-__global__ void globalMemorySgemm(const float* A, const float* B, float* C, int N);
+__global__ void globalMemorySgemm(const float* A, const float* B, float* C,
+                                  int N);
 
 // Matrix multiplication kernel using shared memory
-__global__ void SharedMemoryDgemm(const double* A, const double* B, double* C, int N);
+__global__ void SharedMemoryDgemm(const double* A, const double* B, double* C,
+                                  int N);
 
 // Matrix multiplication kernel using shared memory
-__global__ void SharedMemorySgemm(const float* A, const float* B, float* C, int N);
+__global__ void SharedMemorySgemm(const float* A, const float* B, float* C,
+                                  int N);
 
 // Batched matrix multiplication kernel using global memory
 template <typename T>

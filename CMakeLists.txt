@@ -24,7 +24,7 @@ include_directories(${CUBLAS_INCLUDE_DIRS})
 cuda_add_executable(gemm
         ${CMAKE_SOURCE_DIR}/gemm_benchmark.cu
         ${CMAKE_SOURCE_DIR}/src/matrix.cpp
-        ${CMAKE_SOURCE_DIR}/src/my_gemm.cu
+        ${CMAKE_SOURCE_DIR}/src/kernels.cu
         ${CMAKE_SOURCE_DIR}/src/kernels_calls.cu
         ${CMAKE_SOURCE_DIR}/src/wrapper.cu
 )
@@ -38,7 +38,7 @@ target_link_libraries(gemm ${CUDA_CUBLAS_LIBRARIES})
 cuda_add_executable(batched_gemm
         ${CMAKE_SOURCE_DIR}/batched_gemm_benchmark.cu
         ${CMAKE_SOURCE_DIR}/src/matrix.cpp
-        ${CMAKE_SOURCE_DIR}/src/my_gemm.cu
+        ${CMAKE_SOURCE_DIR}/src/kernels.cu
         ${CMAKE_SOURCE_DIR}/src/kernels_calls.cu
         ${CMAKE_SOURCE_DIR}/src/wrapper.cu
 )

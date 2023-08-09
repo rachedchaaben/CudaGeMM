@@ -3,25 +3,26 @@
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include "my_gemm.h"
+#include "kernels.h"
 
-// cublas matrix multiplication kernel
+// cublas matrix multiplication kernel template
 template <typename T>
 T* call_cublasGemm(const T* h_A, const T* h_B, int N);
 
-// Matrix multiplication kernel
+// matrix multiplication kernel double precision: naive implementation
 double* call_DgemmGlobalMemory(const double* h_A, const double* h_b, int N);
 
-// Matrix multiplication kernel
+// matrix multiplication kernel single precision: naive implementation
 float* call_SgemmGlobalMemory(const float* h_A, const float* h_b, int N);
 
-// Matrix multiplication kernel with shared memory
+// matrix multiplication kernel double precision: using shared memory
 double* call_DgemmSharedMemory(const double* h_A, const double* h_b, int N);
 
-// Matrix multiplication kernel with shared memory
+// matrix multiplication kernel double precision: using shared memory and 2D
+// threads Blocktiling
 float* call_SgemmSharedMemory(const float* h_A, const float* h_b, int N);
 
-// cutlass matrix multiplication kernel T precision
+// cutlass matrix multiplication kernel single precision
 float* call_cutlassSgemm(const float* h_A, const float* h_B, int N);
 
 // cublas Batched matrix multiplication kernel

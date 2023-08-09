@@ -39,8 +39,9 @@ int main()
 
     // Loop through different matrix sizes
     for (int N = MIN_MATRIX_SIZE; N <= MAX_MATRIX_SIZE; N += 50) {
-        std::cout << "Matrix Size: " << N << " x " << N <<", Batch size : " << N << std::endl;
-        int BATCH_SIZE =N;
+        std::cout << "Matrix Size: " << N << " x " << N
+                  << ", Batch size : " << N << std::endl;
+        int BATCH_SIZE = N;
         double* h_A = new double[N * N * BATCH_SIZE];
         double* h_B = new double[N * N * BATCH_SIZE];
 
@@ -60,10 +61,12 @@ int main()
         float *h_C1_float, *h_C2_float, *h_C3_float, *h_C4_float;
 
         h_C1 = call_cublasGemmBatched(h_A, h_B, N, BATCH_SIZE);
-        h_C1_float = call_cublasGemmBatched(h_A_float, h_B_float, N, BATCH_SIZE);
+        h_C1_float =
+            call_cublasGemmBatched(h_A_float, h_B_float, N, BATCH_SIZE);
 
         h_C2 = call_CutlassBatchedGemm(h_A, h_B, N, BATCH_SIZE);
-        h_C2_float = call_CutlassBatchedGemm(h_A_float, h_B_float, N, BATCH_SIZE);
+        h_C2_float =
+            call_CutlassBatchedGemm(h_A_float, h_B_float, N, BATCH_SIZE);
 
         h_C3 = call_BatchedGemmGlobalMemory(h_A, h_B, N, BATCH_SIZE);
         h_C3_float =

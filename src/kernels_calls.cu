@@ -2,8 +2,8 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <stdio.h>
-#include <iostream>
 #include <cmath>
+#include <iostream>
 #include "cutlass/cutlass.h"
 #include "cutlass/gemm/device/gemm.h"
 #include "cutlass/gemm/device/gemm_array.h"
@@ -11,11 +11,11 @@
 #include "cutlass/layout/matrix.h"
 #include "kernels_calls.h"
 #include "wrapper.h"
-#define CEIL(M, N) (((M) + (N)-1) / (N)) 
+#define CEIL(M, N) (((M) + (N)-1) / (N))
 
 using namespace std;
 
-// cublas matrix multiplication kernel T precision
+// cublas matrix multiplication kernel template
 template <typename T>
 T* call_cublasGemm(const T* h_A, const T* h_B, int N)
 {
@@ -54,6 +54,7 @@ T* call_cublasGemm(const T* h_A, const T* h_B, int N)
 template double* call_cublasGemm(const double* h_A, const double* h_B, int N);
 template float* call_cublasGemm(const float* h_A, const float* h_B, int N);
 
+// matrix multiplication kernel double precision: naive implementation
 double* call_DgemmGlobalMemory(const double* h_A, const double* h_B, int N)
 {
     double* h_C = new double[N * N];
@@ -72,7 +73,7 @@ double* call_DgemmGlobalMemory(const double* h_A, const double* h_B, int N)
 
     // Calculate the grid and block dimensions for CUDA kernels
     dim3 block(32 * 32);
-    dim3 grid(CEIL(N,32), CEIL(N,32));
+    dim3 grid(CEIL(N, 32), CEIL(N, 32));
 
     // Call the global memory double precision kernel
     globalMemoryDgemm<<<grid, block>>>(d_A, d_B, d_C, N);
@@ -88,6 +89,7 @@ double* call_DgemmGlobalMemory(const double* h_A, const double* h_B, int N)
     return h_C;
 }
 
+// matrix multiplication kernel single precision: naive implementation
 float* call_SgemmGlobalMemory(const float* h_A, const float* h_B, int N)
 {
     float* h_C = new float[N * N];
@@ -106,7 +108,7 @@ float* call_SgemmGlobalMemory(const float* h_A, const float* h_B, int N)
 
     // Calculate the grid and block dimensions for CUDA kernels
     dim3 block(32 * 32);
-    dim3 grid(CEIL(N,32), CEIL(N,32));
+    dim3 grid(CEIL(N, 32), CEIL(N, 32));
 
     // Call the global memory float precision kernel
     globalMemorySgemm<<<grid, block>>>(d_A, d_B, d_C, N);
@@ -122,6 +124,7 @@ float* call_SgemmGlobalMemory(const float* h_A, const float* h_B, int N)
     return h_C;
 }
 
+// matrix multiplication kernel double precision: using shared memory
 double* call_DgemmSharedMemory(const double* h_A, const double* h_B, int N)
 {
     double* h_C = new double[N * N];
@@ -140,7 +143,7 @@ double* call_DgemmSharedMemory(const double* h_A, const double* h_B, int N)
 
     // Calculate the grid and block dimensions for CUDA kernels
     dim3 block(32 * 32);
-    dim3 grid(CEIL(N,32), CEIL(N,32));
+    dim3 grid(CEIL(N, 32), CEIL(N, 32));
 
     // Call the global memory double precision kernel
     SharedMemoryDgemm<<<grid, block>>>(d_A, d_B, d_C, N);
@@ -156,6 +159,8 @@ double* call_DgemmSharedMemory(const double* h_A, const double* h_B, int N)
     return h_C;
 }
 
+// matrix multiplication kernel double precision: using shared memory and 2D
+// threads Blocktiling
 float* call_SgemmSharedMemory(const float* h_A, const float* h_B, int N)
 {
     float* h_C = new float[N * N];
@@ -175,7 +180,7 @@ float* call_SgemmSharedMemory(const float* h_A, const float* h_B, int N)
     // Calculate the grid and block dimensions for CUDA kernels
 
     dim3 block(256);
-    dim3 grid(CEIL(N,128), CEIL(N,128));
+    dim3 grid(CEIL(N, 128), CEIL(N, 128));
 
 
     // Call the global memory float precision kernel
@@ -192,7 +197,7 @@ float* call_SgemmSharedMemory(const float* h_A, const float* h_B, int N)
     return h_C;
 }
 
-// cutlass matrix multiplication kernel T precision
+// cutlass matrix multiplication kernel single precision
 float* call_cutlassSgemm(const float* h_A, const float* h_B, int N)
 {
     float* h_C = new float[N * N];
@@ -206,7 +211,8 @@ float* call_cutlassSgemm(const float* h_A, const float* h_B, int N)
     cudaMalloc(&d_B, N * N * sizeof(float));
     cudaMalloc(&d_C, N * N * sizeof(float));
     // Copy data from host to device
-    cudaMemcpy(d_A, h_A, N * N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaError_t copyResult =
+        cudaMemcpy(d_A, h_A, N * N * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_B, h_B, N * N * sizeof(float), cudaMemcpyHostToDevice);
 
     using ColumnMajor = cutlass::layout::ColumnMajor;
@@ -223,14 +229,13 @@ float* call_cutlassSgemm(const float* h_A, const float* h_B, int N)
     CutlassGemm gemm_operator;
 
     CutlassGemm::Arguments args(
-        {N ,N ,N},  // Gemm Problem dimensions
-        {d_B, N}, 
-        {d_A, N},   // Tensor-ref for source matrix A
-        {d_C, N},   // Tensor-ref for source matrix C
-        {d_C, N},   // Tensor-ref for destination matrix D (may be different
-                    // memory than source C matrix)
+        {N, N, N},           // Gemm Problem dimensions
+        {d_B, N}, {d_A, N},  // Tensor-ref for source matrix A
+        {d_C, N},            // Tensor-ref for source matrix C
+        {d_C, N},       // Tensor-ref for destination matrix D (may be different
+                        // memory than source C matrix)
         {1.0f, 0.0f});  // Scalars used in the Epilogue
-    
+
     cutlass::Status status = gemm_operator(args);
 
     // Copy results back from device to host

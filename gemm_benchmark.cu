@@ -34,7 +34,7 @@ int main()
     };
 
     // Loop through different matrix sizes and compare the performance
-    for (int N = MIN_MATRIX_SIZE; N <= MAX_MATRIX_SIZE; N += 500) {
+    for (int N = MIN_MATRIX_SIZE; N <= MAX_MATRIX_SIZE; N += 1000) {
         std::cout << "Matrix Size: " << N << " x " << N << std::endl;
 
         // Initialize input matrices with random values
@@ -44,10 +44,10 @@ int main()
         float* h_A_float = new float[N * N];
         float* h_B_float = new float[N * N];
         h_A = generateRandomMatrixDouble(N, N);
-                for (int i = 0; i < N * N; ++i) {
+        for (int i = 0; i < N * N; ++i) {
             h_A_float[i] = static_cast<float>(h_A[i]);
         }
-        
+
         h_B = generateRandomMatrixDouble(N, N);
         for (int i = 0; i < N * N; ++i) {
             h_B_float[i] = static_cast<float>(h_B[i]);
@@ -70,7 +70,7 @@ int main()
 
         // Compare results of CUDA kernels
         if (compareMatrices(h_C1, h_C4, N, 1) &&
-        //    compareMatrices(h_C3, h_C1, N, 1) &&
+            //    compareMatrices(h_C3, h_C1, N, 1) &&
             compareMatrices(h_C4, h_C3, N, 1)) {
             std::cout << "Correct Double Precison CUDA Kernels\n";
         } else
